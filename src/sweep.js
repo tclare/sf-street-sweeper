@@ -19,15 +19,46 @@ const STATE_PATH = fm.joinPath(fm.documentsDirectory(), "sweep-state.json");
 
 let now;
 
-async function run(input = {}) {
+async function run(raw) {
+  const input = normalizeInput(raw);
   now = input.now ? new Date(input.now) : new Date();
   switch (input.mode) {
     case "park": return park(Number(input.lat), Number(input.lon));
     case "confirm": return confirm(input.choice);
     case "nightly": return nightly();
     case "clear": await clear(); return {};
-    default: throw new Error(`Unknown mode: ${input.mode}`);
+    default:
+      throw new Error(
+        `Unknown mode: ${input.mode}. Received ${describe(raw)}. ` +
+        "Run this from Shortcuts with a Dictionary (mode = park, confirm, nightly or clear) " +
+        "in Run Script's Parameter field."
+      );
   }
+}
+
+// Shortcuts may pass a Dictionary, JSON text or a bare mode name, in Parameter or Texts;
+// Scriptable's own Run button passes nothing. Keys are matched case-insensitively.
+function normalizeInput(raw) {
+  const empty = v => v == null || v === "" || (typeof v === "object" && !Object.keys(v).length);
+  let v = raw;
+  if (empty(v) && typeof args !== "undefined") {
+    v = [args.shortcutParameter, args.plainTexts?.[0], args.queryParameters].find(x => !empty(x));
+  }
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { v = { mode: v }; }
+  }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const input = Object.fromEntries(
+    Object.entries(v).map(([k, val]) => [k.trim().toLowerCase(), typeof val === "string" ? val.trim() : val])
+  );
+  if (typeof input.mode === "string") input.mode = input.mode.toLowerCase();
+  return input;
+}
+
+function describe(raw) {
+  if (raw == null || (typeof raw === "object" && !Object.keys(raw).length)) return "no input";
+  const s = typeof raw === "string" ? `text "${raw}"` : JSON.stringify(raw);
+  return s.length > 120 ? `${s.slice(0, 120)}…` : s;
 }
 
 // ---- modes ----

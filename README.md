@@ -117,6 +117,8 @@ Allow Shortcuts location access as **Always**.
 
 Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `NOTIFY_HOUR`, `ALARM_LEAD_MIN`) are at the top of the file.
 
+The parameter can also be JSON text or a bare mode name (`nightly`), and keys are matched case-insensitively. If you see **"Unknown mode: undefined"**, the error message shows what the script actually received. Usually the script was started from Scriptable's ▶︎ button, which passes nothing, or the Dictionary isn't in Run Script's **Parameter** field.
+
 ---
 
 ## Development
