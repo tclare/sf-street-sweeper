@@ -1,6 +1,6 @@
 # 🧹 sf-street-sweeper
 
-**Never get a San Francisco street-sweeping ticket again.** When you park, your iPhone works out which block and which side of the street you're on, looks up that side's sweeping schedule, and reminds you to move the car at 9 PM the night before each sweep.
+**Never get a San Francisco street-sweeping ticket again.** When you park, your iPhone works out which block and which side of the street you're on, looks up that side's sweeping schedule, and reminds you to move the car at 9 PM the night before the next sweep.
 
 | When | What you see |
 |---|---|
@@ -29,16 +29,16 @@ sequenceDiagram
     SC->>SC: Confirm / Pick another
     SC->>L: {mode: confirm, choice}
     L->>SF: schedule for that block side
-    L->>L: schedule a 9 PM reminder before each sweep (next 5 weeks)
-    Note over L: iOS delivers each reminder on time, no shortcut needed
+    L->>L: schedule a 9 PM reminder the night before the next sweep
+    Note over L: iOS delivers it on time, no shortcut needed
 ```
 
 - **Which block:** one Socrata query using `distance_in_meters()` returns the nearest block sides, already sorted.
 - **Which side:** a cross product of your position against the block's centreline gives left/right, which maps to the dataset's `cnnrightleft`. The `blockside` field gives the compass label (North, West, …).
 - **Which cross street:** where your position falls along the block (`limits` is listed in the line's drawn direction) gives the nearer end.
 - **The pick-another list:** up to 10 distinct *street, cross street, side* options. Nearby blocks come first, then each block's far end, in case GPS is off along the block.
-- **When:** `weekN` means the Nth occurrence of that weekday in the month. On confirm, the script finds every sweep in the next 36 days and schedules a 9 PM reminder the night before each one (up to 20). That's far beyond SF's 72-hour parking limit, so nothing needs to run nightly. If you park after 9 PM the night before, that reminder is sent immediately.
-- **Cancelling:** parking again, or reconnecting to the car, cancels every pending reminder and forgets the spot. Outside SF the API returns nothing, so nothing is set.
+- **When:** `weekN` means the Nth occurrence of that weekday in the month. On confirm, the script finds the next sweep (looking up to 36 days ahead) and schedules one 9 PM reminder for the night before. If you park after 9 PM the night before, it's sent immediately. You move the car for every sweep, and parking again schedules the next reminder.
+- **Cancelling:** parking again, or reconnecting to the car, cancels the pending reminder and forgets the spot. Outside SF the API returns nothing, so nothing is set.
 
 > **About GPS accuracy:** phone GPS is usually off by 5–15 m, about half a street's width. The street and cross street are reliable; the side is a best guess. That's why you're asked to confirm.
 
@@ -80,13 +80,13 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
 </details>
 
 <details open>
-<summary><b>Sweep · Status</b> (optional: what's being tracked, for Siri, widgets or other shortcuts)</summary>
+<summary><b>Sweep · Status</b> (optional: check that the CarPlay hooks kept the state up to date)</summary>
 
 1. **Run Script** · Parameter: **Dictionary** `mode = status`
 2. **Get Dictionary Value** `text` in *Script Result*
 3. **Stop and Output** *Dictionary Value*
 
-The output is empty when no confirmed spot has reminders scheduled. To see it when you tap the shortcut, put **If** *Dictionary Value* has any value → **Show Result** before step 3.
+After CarPlay disconnects and you confirm, it shows the spot, the next sweep and the reminder time. After CarPlay connects, it's empty. To see it when you tap the shortcut, put **If** *Dictionary Value* has any value → **Show Result** before step 3.
 </details>
 
 ### 4. Add the automations (on the iPhone)
@@ -108,15 +108,15 @@ Allow Shortcuts location access as **Always**.
 | `mode` | Input | Returns |
 |---|---|---|
 | `park` | `lat`, `lon` | `{best, prompt, labels}`, or `{labels: []}` outside SF |
-| `confirm` | `choice` (one of `labels`) | `{spot, next, reminders}`: the next sweep and how many reminders were scheduled |
-| `clear` | — | `{}` (cancels all reminders, forgets the spot) |
-| `status` | — | `{text}`: spot, next sweep and reminder count on separate lines, or `""` when nothing is tracked |
+| `confirm` | `choice` (one of `labels`) | `{spot, next, reminder}`: the next sweep and when its reminder fires (`"sent now"` if 9 PM has passed) |
+| `clear` | — | `{}` (cancels the reminder, forgets the spot) |
+| `status` | — | `{text}`: spot, next sweep and reminder (a time, `sent` or `none`) on separate lines, or `""` when nothing is tracked |
 
-Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `MAX_OPTIONS`, `NOTIFY_HOUR`, `LOOKAHEAD_DAYS`, `MAX_REMINDERS`) are at the top of the file.
+Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `MAX_OPTIONS`, `NOTIFY_HOUR`, `LOOKAHEAD_DAYS`) are at the top of the file.
 
 The parameter can also be JSON text or a bare mode name (`clear`), and keys are matched case-insensitively. Input with no recognisable `mode` gives an error that shows what the script received.
 
-**No input** (tapping ▶︎ in Scriptable) opens a read-only status screen: the version, your saved spot and next sweep, how many reminders are scheduled, and a live check of the SF API.
+**No input** (tapping ▶︎ in Scriptable) opens a read-only status screen: the version, your saved spot and next sweep, when the reminder fires, and a live check of the SF API.
 
 ---
 
@@ -162,7 +162,7 @@ req.headers = { Authorization: `token ${Keychain.get("github-token")}` };
 
 - **Holidays aren't checked.** You may get a reminder on a holiday when sweeping is suspended, which errs on the safe side.
 - **Reminders are notifications, not alarms.** They follow silent mode and Focus.
-- **Reminders cover 5 weeks.** A car left in one spot longer than that gets no further reminders, though SF's 72-hour limit applies long before then.
+- **One reminder per parking.** If the car stays put past a sweep, for example on a holiday, there's no reminder for the next sweep until you park again. `Sweep · Status` shows `Reminder: none` in that case.
 - **Data quirks.** A few SF records have truncated street names (`ission Bay Cir`) or leading zeros (`04th St`).
 - **Maps' Parked Car pin isn't used.** Shortcuts can't read it. The automation uses the same CarPlay/Bluetooth disconnect signal Maps relies on, plus your current location.
 

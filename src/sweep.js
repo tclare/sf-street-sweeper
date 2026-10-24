@@ -2,20 +2,19 @@
 // A Scriptable module: scriptable/Sweep.js downloads this file and calls run(input), where
 // input is the dictionary passed from Shortcuts' "Run Script" action:
 //   {mode: "park", lat, lon}  -> {best, prompt, labels}   (no "best" = outside SF / no sweeping nearby)
-//   {mode: "confirm", choice} -> {spot, next, reminders}  (schedules a 9pm reminder before each sweep)
-//   {mode: "clear"}           -> {}                       (cancels reminders, forgets the spot)
+//   {mode: "confirm", choice} -> {spot, next, reminder}   (schedules a 9pm reminder before the next sweep)
+//   {mode: "clear"}           -> {}                       (cancels the reminder, forgets the spot)
 //   {mode: "status"}          -> {text}                   ("" when nothing is being tracked)
 // No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
-const VERSION = "2.1.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
+const VERSION = "2.2.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
 const MAX_OPTIONS = 10; // distinct spots offered in the pick-another list
 const NOTIFY_HOUR = 21; // reminder at 9pm the night before
-const LOOKAHEAD_DAYS = 36; // remind for every sweep in this window; SF's 72-hour limit makes it plenty
-const MAX_REMINDERS = 20; // iOS keeps at most 64 pending notifications per app
-const REMINDER_PREFIX = "sweep-reminder";
+const LOOKAHEAD_DAYS = 36; // how far ahead to look for the next sweep
+const REMINDER_ID = "sweep-reminder"; // v2.0-2.1 used sweep-reminder-N; clear() removes those too
 const DAYS = ["Sun", "Mon", "Tues", "Wed", "Thu", "Fri", "Sat"]; // dataset spelling
 
 const fm = FileManager.local();
@@ -94,21 +93,20 @@ async function confirm(choice) {
     $select: "weekday,fromhour,tohour,week1,week2,week3,week4,week5",
     $where: `cnn='${spot.cnn}' AND cnnrightleft='${spot.side}' AND weekday!='Holiday'`,
   });
-  const sweeps = upcomingSweeps(rules, now).slice(0, MAX_REMINDERS);
-  if (!sweeps.length) {
+  const [next] = upcomingSweeps(rules, now);
+  if (!next) {
     await clear();
     await notify("No Street Sweeping Found", spot.label, "No reminders set for this spot.");
     return {};
   }
-  saveState({ label: spot.label, rules });
-  await Promise.all(sweeps.map((w, i) => scheduleReminder(spot.label, w, `${REMINDER_PREFIX}-${i}`)));
-  const next = fmtWindow(sweeps[0]);
-  await notify("Parking Confirmed", spot.label, `Next sweeping ${next}.`);
-  return { spot: spot.label, next, reminders: sweeps.length };
+  const at = await scheduleReminder(spot.label, next);
+  saveState({ label: spot.label, rules, reminderFor: next.start.toISOString(), reminderAt: at?.toISOString() });
+  await notify("Parking Confirmed", spot.label, `Next sweeping ${fmtWindow(next)}.`);
+  return { spot: spot.label, next: fmtWindow(next), reminder: at ? fmtDateTime(at) : "sent now" };
 }
 
 async function clear() {
-  const ids = (await Notification.allPending()).map(n => n.identifier).filter(id => id?.startsWith(REMINDER_PREFIX));
+  const ids = (await Notification.allPending()).map(n => n.identifier).filter(id => id?.startsWith(REMINDER_ID));
   await Notification.removePending(ids);
   if (fm.fileExists(STATE_PATH)) fm.remove(STATE_PATH);
 }
@@ -133,24 +131,23 @@ async function status() {
   return { version: VERSION, status: lines };
 }
 
-// The saved spot and its pending reminders. Active = a confirmed spot with reminders to come.
+// The saved spot and its reminder. Active = a confirmed spot with a sweep still to come.
 async function tracking() {
   const state = loadState();
   const lines = [];
-  if (state?.rules) {
-    const [next] = upcomingSweeps(state.rules, now);
-    lines.push(`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`);
-  } else {
-    lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot");
+  if (!state?.rules) {
+    lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot", "Reminder: none");
+    return { lines, active: false };
   }
+  const [next] = upcomingSweeps(state.rules, now);
+  lines.push(`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`);
 
-  const reminders = (await Notification.allPending())
-    .filter(n => n.identifier?.startsWith(REMINDER_PREFIX))
-    .map(n => n.nextTriggerDate)
-    .sort((p, q) => (p ?? 0) - (q ?? 0));
-  const first = reminders[0] ? `, next ${fmtDateTime(reminders[0])}` : "";
-  lines.push(`Reminders: ${reminders.length ? `${reminders.length} scheduled${first}` : "none"}`);
-  return { lines, active: Boolean(state?.rules) && reminders.length > 0 };
+  const pending = (await Notification.allPending()).find(n => n.identifier === REMINDER_ID);
+  let reminder = "none"; // e.g. the car stayed put past the sweep it was reminded about
+  if (pending) reminder = fmtDateTime(pending.nextTriggerDate ?? state.reminderAt);
+  else if (next && state.reminderFor === next.start.toISOString()) reminder = "sent";
+  lines.push(`Reminder: ${reminder}`);
+  return { lines, active: Boolean(next) };
 }
 
 // ---- location -> candidate spots ----
@@ -210,17 +207,19 @@ function upcomingSweeps(rules, from, days = LOOKAHEAD_DAYS) {
 
 const atHour = (day, h) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Number(h));
 
-function scheduleReminder(label, sweep, identifier) {
+// Returns when the reminder will fire, or null if 9pm has passed and it was sent now.
+async function scheduleReminder(label, sweep) {
   const { start } = sweep;
   const at = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1, NOTIFY_HOUR);
   const n = new Notification();
-  n.identifier = identifier;
+  n.identifier = REMINDER_ID;
   n.title = "Car Move Reminder";
   n.subtitle = `Located at ${label}`;
   n.body = `Street sweeping ${fmtWindow(sweep)}.`;
   n.sound = "default";
   if (at > now) n.setTriggerDate(at); // otherwise 9pm has passed: deliver now
-  return n.schedule();
+  await n.schedule();
+  return at > now ? at : null;
 }
 
 // ---- helpers ----

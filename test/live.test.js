@@ -26,18 +26,14 @@ test("park offers up to 10 distinct options, including the block's far end", opt
   assert.ok(labels.every(l => /^.+, Near .+, (North|South|East|West|NorthEast|NorthWest|SouthEast|SouthWest) side$/.test(l)), labels);
 });
 
-test("confirm schedules a 9pm reminder the night before every sweep", opts, async () => {
+test("confirm schedules one 9pm reminder, the night before the next sweep", opts, async () => {
   const out = await run({ mode: "confirm", choice: WEST, now: SAT });
-  assert.deepEqual(out, { spot: WEST, next: "Mon, Oct 26, 9:00 AM–11:00 AM", reminders: 15 });
-  const rs = reminders();
-  assert.equal(rs.length, 15);
-  assert.equal(rs[0].triggerDate.getTime(), new Date("2026-10-25T21:00:00-07:00").getTime());
-  assert.equal(rs[1].triggerDate.getTime(), new Date("2026-10-27T21:00:00-07:00").getTime());
-  for (const r of rs) {
-    assert.equal(r.title, "Car Move Reminder");
-    assert.equal(r.subtitle, `Located at ${WEST}`);
-    assert.equal(r.triggerDate.getHours(), 21);
-  }
+  assert.deepEqual(out, { spot: WEST, next: "Mon, Oct 26, 9:00 AM–11:00 AM", reminder: "Sun, Oct 25, 9:00 PM" });
+  assert.equal(pending.size, 1);
+  const r = pending.get("sweep-reminder");
+  assert.equal(r.title, "Car Move Reminder");
+  assert.equal(r.subtitle, `Located at ${WEST}`);
+  assert.equal(r.triggerDate.getTime(), new Date("2026-10-25T21:00:00-07:00").getTime());
   assert.equal(delivered.at(-1).title, "Parking Confirmed");
 });
 
@@ -46,22 +42,30 @@ test("status mode reports the tracked spot as text", opts, async () => {
   assert.equal(text, [
     `Parked: ${WEST}`,
     "Next sweeping: Mon, Oct 26, 9:00 AM–11:00 AM",
-    "Reminders: 15 scheduled",
+    "Reminder: Sun, Oct 25, 9:00 PM",
   ].join("\n"));
 });
 
-test("parking after 9pm the night before reminds now, then schedules the rest", opts, async () => {
-  await run({ mode: "park", ...FOLSOM, now: "2026-10-25T22:30:00-07:00" });
-  assert.equal(pending.size, 0); // park cancels the previous spot's reminders
-  await run({ mode: "confirm", choice: WEST, now: "2026-10-25T22:30:00-07:00" });
-  const [first, second] = reminders();
-  assert.equal(first.triggerDate, undefined); // delivered immediately
-  assert.match(first.body, /Mon, Oct 26/);
-  assert.equal(second.triggerDate.getTime(), nineOnEve("2026-10-28T09:00:00-07:00"));
+test("parking after 9pm the night before sends the reminder now", opts, async () => {
+  const late = "2026-10-25T22:30:00-07:00";
+  await run({ mode: "park", ...FOLSOM, now: late });
+  assert.equal(pending.size, 0); // park cancels the previous spot's reminder
+  const out = await run({ mode: "confirm", choice: WEST, now: late });
+  assert.equal(out.reminder, "sent now");
+  assert.equal(pending.size, 0);
+  assert.match(delivered.find(n => n.title === "Car Move Reminder").body, /Mon, Oct 26/);
+  assert.match((await run({ mode: "status", now: late })).text, /Reminder: sent$/);
 });
 
-test("clear cancels every reminder", opts, async () => {
-  assert.ok(pending.size > 0);
+test("status shows no reminder once the car stays past the reminded sweep", opts, async () => {
+  const { text } = await run({ mode: "status", now: "2026-10-26T12:00:00-07:00" });
+  assert.match(text, /Next sweeping: Wed, Oct 28.*\nReminder: none$/s);
+});
+
+test("clear cancels the reminder", opts, async () => {
+  await run({ mode: "park", ...FOLSOM, now: SAT });
+  await run({ mode: "confirm", choice: WEST, now: SAT });
+  assert.equal(pending.size, 1);
   assert.deepEqual(await run({ mode: "clear" }), {});
   assert.equal(pending.size, 0);
 });
@@ -86,7 +90,7 @@ test("no input shows read-only status with the version", opts, async () => {
   assert.equal(out.version, VERSION);
   assert.deepEqual(out.status, [
     "Parked: no saved spot",
-    "Reminders: none",
+    "Reminder: none",
     `SF API: OK (test spot: ${WEST})`,
   ]);
 });

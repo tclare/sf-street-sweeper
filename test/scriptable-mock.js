@@ -26,9 +26,9 @@ globalThis.Request = class {
 };
 
 globalThis.Notification = class {
-  setTriggerDate(d) { this.triggerDate = d; }
+  setTriggerDate(d) { this.triggerDate = d; this.nextTriggerDate = d; }
   async schedule() {
-    if (this.identifier) pending.set(this.identifier, this);
+    if (this.triggerDate) pending.set(this.identifier, this); // no trigger date = delivered now
     else delivered.push(this);
   }
   static async allPending() { return [...pending.values()]; }
