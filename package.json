@@ -5,7 +5,8 @@
   "description": "SF street-sweeping reminders for your parked car, via Apple Shortcuts + Scriptable",
   "scripts": {
     "test": "TZ=America/Los_Angeles node --test test/*.test.js",
-    "test:offline": "SKIP_LIVE=1 npm test"
+    "test:offline": "SKIP_LIVE=1 npm test",
+    "try": "TZ=America/Los_Angeles node scripts/try.js"
   },
   "engines": { "node": ">=18" }
 }

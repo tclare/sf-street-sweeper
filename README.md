@@ -128,7 +128,14 @@ The parameter can also be JSON text or a bare mode name (`nightly`), and keys ar
 ```sh
 npm test               # all tests (offline schedule maths, loader fallback, live API scenarios)
 npm run test:offline   # skip the tests that call data.sf.gov
+
+npm run try -- park lat=37.7549 lon=-122.41448     # print what Shortcuts would get
+npm run try -- confirm "choice=Folsom St, Near 22nd St, West side (toward 23rd St)"
+npm run try -- nightly now=2026-10-25T21:00:00-07:00
+npm run try                                        # status
 ```
+
+`npm run try` runs the real script against the live API and remembers the saved spot in `.sweep-state/`, so park → confirm → nightly works across runs. Notifications are printed instead of sent. On the phone, add **Quick Look** (*Script Result*) after any Run Script action to see the same output.
 
 Node 18+ is required; there are no dependencies. The tests run the real script against small stand-ins for Scriptable's `Request`, `Notification` and `FileManager` ([`test/scriptable-mock.js`](test/scriptable-mock.js)). They use `America/Los_Angeles` time so DST is covered.
 

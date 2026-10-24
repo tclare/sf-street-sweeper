@@ -3,7 +3,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const docs = fs.mkdtempSync(path.join(os.tmpdir(), "sweep-test-"));
+const docs = process.env.SWEEP_STATE_DIR || fs.mkdtempSync(path.join(os.tmpdir(), "sweep-test-"));
+fs.mkdirSync(docs, { recursive: true });
 const delivered = [];
 const pending = new Map();
 
