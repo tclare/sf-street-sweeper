@@ -50,3 +50,14 @@ test("outside SF returns no candidates and clears everything", opts, async () =>
   assert.equal(pending.size, 0);
   assert.deepEqual(await run({ mode: "nightly" }), {});
 });
+
+test("no input shows read-only status with the version", opts, async () => {
+  const { VERSION } = require("../src/sweep");
+  const out = await run({});
+  assert.equal(out.version, VERSION);
+  assert.deepEqual(out.status, [
+    "Parked: no saved spot",
+    "Reminder: none",
+    "SF API: OK (test spot: Folsom St, Near 22nd St, West side)",
+  ]);
+});

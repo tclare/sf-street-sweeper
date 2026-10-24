@@ -117,7 +117,9 @@ Allow Shortcuts location access as **Always**.
 
 Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `NOTIFY_HOUR`, `ALARM_LEAD_MIN`) are at the top of the file.
 
-The parameter can also be JSON text or a bare mode name (`nightly`), and keys are matched case-insensitively. If you see **"Unknown mode: undefined"**, the error message shows what the script actually received. Usually the script was started from Scriptable's ▶︎ button, which passes nothing, or the Dictionary isn't in Run Script's **Parameter** field.
+The parameter can also be JSON text or a bare mode name (`nightly`), and keys are matched case-insensitively. Input with no recognisable `mode` gives an error that shows what the script received.
+
+**No input** (tapping ▶︎ in Scriptable) opens a read-only status screen: the version, your saved spot and next sweep, whether a reminder is pending, and a live check of the SF API.
 
 ---
 
@@ -138,6 +140,7 @@ npm test && git push
 ```
 
 - The loader fetches a fresh copy on every run, bypassing GitHub's cache.
+- **Checking a deploy:** bump `VERSION` at the top of `src/sweep.js`, push, then tap ▶︎ on *Sweep* in Scriptable. The title should show the new version.
 - **A broken push doesn't break your phone.** If the download fails, isn't HTTP 200, or doesn't load, the loader uses the last good copy. The same happens when you're offline.
 - CI ([`.github/workflows/test.yml`](.github/workflows/test.yml)) runs the tests on every push, and weekly to catch changes to the SF dataset.
 - **Pinning:** to stop the phone tracking `main`, set `REF` in the loader to a tag (`v1.0.0`) or commit SHA. Then release with `git tag v1.1.0 && git push --tags` and update `REF`.

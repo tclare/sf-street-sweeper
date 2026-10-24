@@ -19,7 +19,7 @@ test("falls back to Scriptable args when the loader passes nothing", async () =>
   }
 });
 
-test("missing mode explains what was received", async () => {
-  await assert.rejects(run({}), /Unknown mode: undefined\. Received no input\..*Parameter field/);
-  await assert.rejects(run({ lat: 1 }), /Received \{"lat":1\}/);
+test("input without a mode explains what was received", async () => {
+  await assert.rejects(run({ lat: 1 }), /Unknown mode: undefined\. Received \{"lat":1\}\..*Parameter field/);
+  await assert.rejects(run("bogus"), /Unknown mode: bogus/);
 });

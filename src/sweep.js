@@ -5,8 +5,10 @@
 //   {mode: "confirm", choice} -> {alarm?}                 (alarm is "yyyy-MM-dd HH:mm" for Create Alarm)
 //   {mode: "nightly"}         -> {alarm?}
 //   {mode: "clear"}           -> {}
+// No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
+const VERSION = "1.1.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
 const NOTIFY_HOUR = 21; // reminder at 9pm the night before
@@ -22,6 +24,7 @@ let now;
 async function run(raw) {
   const input = normalizeInput(raw);
   now = input.now ? new Date(input.now) : new Date();
+  if (!Object.keys(input).length) return status();
   switch (input.mode) {
     case "park": return park(Number(input.lat), Number(input.lon));
     case "confirm": return confirm(input.choice);
@@ -113,6 +116,35 @@ async function nightly() {
 async function clear() {
   await Notification.removePending([REMINDER_ID]);
   if (fm.fileExists(STATE_PATH)) fm.remove(STATE_PATH);
+}
+
+// Read-only: what's saved, what's scheduled, and whether the SF API answers.
+async function status() {
+  const state = loadState();
+  const lines = [];
+  if (state?.start) lines.push(`Parked: ${state.label}`, `Next sweeping: ${fmtWindow(state)}`);
+  else lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot");
+
+  const reminder = (await Notification.allPending()).find(n => n.identifier === REMINDER_ID);
+  const when = reminder?.nextTriggerDate ? fmtDateTime(reminder.nextTriggerDate) : "scheduled";
+  lines.push(`Reminder: ${reminder ? when : "none"}`);
+  if (state?.alarmFor) lines.push("Alarm: handed to Shortcuts");
+
+  try {
+    const [best] = await candidates(37.7549, -122.41448); // Folsom St test point
+    lines.push(`SF API: OK (test spot: ${best?.short ?? "no result"})`);
+  } catch (e) {
+    lines.push(`SF API: failed (${e.message || e})`);
+  }
+
+  if (typeof config !== "undefined" && config.runsInApp) {
+    const alert = new Alert();
+    alert.title = `Street Sweeper v${VERSION}`;
+    alert.message = lines.join("\n");
+    alert.addAction("OK");
+    await alert.present();
+  }
+  return { version: VERSION, status: lines };
 }
 
 // ---- location -> candidate spots ----
@@ -209,6 +241,9 @@ function fmtWindow({ start, end }) {
   return `${day}, ${time(s)}–${time(e)}`;
 }
 
+const fmtDateTime = d =>
+  new Date(d).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
 function notify(title, subtitle, body) {
   const n = new Notification();
   n.title = title;
@@ -225,4 +260,4 @@ function saveState(s) {
   fm.writeString(STATE_PATH, JSON.stringify(s));
 }
 
-module.exports = { run, nextSweep };
+module.exports = { run, nextSweep, VERSION };

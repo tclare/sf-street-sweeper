@@ -30,6 +30,7 @@ globalThis.Notification = class {
     if (this.identifier) pending.set(this.identifier, this);
     else delivered.push(this);
   }
+  static async allPending() { return [...pending.values()]; }
   static async removePending(ids) { ids.forEach(id => pending.delete(id)); }
 };
 
