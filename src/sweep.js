@@ -8,9 +8,10 @@
 // No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
-const VERSION = "1.1.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
+const VERSION = "1.2.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
+const MAX_OPTIONS = 10; // distinct spots offered in the pick-another list
 const NOTIFY_HOUR = 21; // reminder at 9pm the night before
 const ALARM_LEAD_MIN = 30;
 const REMINDER_ID = "sweep-reminder";
@@ -67,6 +68,9 @@ function describe(raw) {
 // ---- modes ----
 
 async function park(lat, lon) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error("park needs numeric lat and lon (check the Dictionary in Run Script)");
+  }
   await clear();
   const cands = await candidates(lat, lon);
   if (!cands.length) return { labels: [] };
@@ -74,7 +78,7 @@ async function park(lat, lon) {
   const best = cands[0];
   return {
     best: best.label,
-    prompt: `📍 ${best.short}\nBlock: ${best.block}`,
+    prompt: `📍 ${best.label}`,
     labels: cands.map(c => c.label),
   };
 }
@@ -89,13 +93,13 @@ async function confirm(choice) {
   const next = nextSweep(rules, now);
   if (!next) {
     await clear();
-    await notify("No Street Sweeping Found", spot.short, "No reminders set for this spot.");
+    await notify("No Street Sweeping Found", spot.label, "No reminders set for this spot.");
     return {};
   }
-  const state = { label: spot.short, block: spot.block, rules, ...next };
+  const state = { label: spot.label, rules, ...next };
   saveState(state);
   await scheduleReminder(state);
-  await notify("Parking Confirmed", spot.short, `Next sweeping ${fmtWindow(state)}.`);
+  await notify("Parking Confirmed", spot.label, `Next sweeping ${fmtWindow(state)}.`);
   return alarmOutput(state);
 }
 
@@ -132,7 +136,7 @@ async function status() {
 
   try {
     const [best] = await candidates(37.7549, -122.41448); // Folsom St test point
-    lines.push(`SF API: OK (test spot: ${best?.short ?? "no result"})`);
+    lines.push(`SF API: OK (test spot: ${best?.label ?? "no result"})`);
   } catch (e) {
     lines.push(`SF API: failed (${e.message || e})`);
   }
@@ -155,7 +159,7 @@ async function candidates(lat, lon) {
     $select: `distinct cnn,corridor,limits,cnnrightleft,blockside,line,distance_in_meters(line,${pt}) as dist`,
     $where: `distance_in_meters(line,${pt}) < ${SEARCH_METERS} AND weekday!='Holiday'`,
     $order: "dist",
-    $limit: "10",
+    $limit: String(MAX_OPTIONS * 4), // headroom: blocks either side of a corner share a label
   });
   const k = Math.cos(lat * Math.PI / 180); // scale longitude so distances are roughly isotropic
   const out = rows.filter(r => r.line).map(r => {
@@ -168,16 +172,19 @@ async function candidates(lat, lon) {
     const t = (dx * px + dy * py) / (dx * dx + dy * dy);
     const [a, b = a] = r.limits.split(/\s+-\s+/);
     const [near, far] = t < 0.5 ? [a, b] : [b, a];
-    const short = `${r.corridor}, Near ${near}, ${r.blockside} side`;
-    return {
-      cnn: r.cnn, side: r.cnnrightleft, short, block: `${a} – ${b}`,
-      label: `${short} (toward ${far})`, guessed: r.cnnrightleft === guess,
-    };
+    const spot = cross => ({ cnn: r.cnn, side: r.cnnrightleft, label: `${r.corridor}, Near ${cross}, ${r.blockside} side` });
+    return { ...spot(near), guessed: r.cnnrightleft === guess, other: far !== near && spot(far) };
   });
   // Rows come nearest-first in L/R pairs; lead with the nearest block on the geometric side.
   const best = out.findIndex(c => c.guessed);
   if (best > 0) out.unshift(...out.splice(best, 1));
-  return out;
+  // Then each block's far end, in case GPS is off along the block. A label shared by
+  // two blocks (either side of a corner) keeps the nearer block.
+  const seen = new Set();
+  return [...out, ...out.map(c => c.other).filter(Boolean)]
+    .filter(c => !seen.has(c.label) && seen.add(c.label))
+    .map(({ cnn, side, label }) => ({ cnn, side, label }))
+    .slice(0, MAX_OPTIONS);
 }
 
 // ---- schedule ----

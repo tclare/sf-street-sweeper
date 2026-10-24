@@ -6,13 +6,21 @@ const { run } = require("../src/sweep");
 
 const opts = { skip: process.env.SKIP_LIVE === "1" && "SKIP_LIVE=1" };
 const FOLSOM = { lat: 37.7549, lon: -122.41448 }; // west side of Folsom, between 22nd and 23rd
-const WEST = "Folsom St, Near 22nd St, West side (toward 23rd St)";
+const WEST = "Folsom St, Near 22nd St, West side";
 
 test("park suggests the west side of Folsom first", opts, async () => {
   const out = await run({ mode: "park", ...FOLSOM, now: "2026-10-24T14:00:00-07:00" });
   assert.equal(out.best, WEST);
   assert.equal(out.labels[0], WEST);
-  assert.match(out.prompt, /Block: 22nd St – 23rd St/);
+  assert.equal(out.prompt, `📍 ${WEST}`);
+});
+
+test("park offers up to 10 distinct options, including the block's far end", opts, async () => {
+  const { labels } = await run({ mode: "park", ...FOLSOM, now: "2026-10-24T14:00:00-07:00" });
+  assert.ok(labels.length <= 10);
+  assert.equal(new Set(labels).size, labels.length);
+  assert.ok(labels.includes("Folsom St, Near 23rd St, West side"));
+  assert.ok(labels.every(l => /^.+, Near .+, (North|South|East|West|NorthEast|NorthWest|SouthEast|SouthWest) side$/.test(l)), labels);
 });
 
 test("confirm schedules the 9pm reminder for the night before", opts, async () => {

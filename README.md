@@ -4,7 +4,7 @@
 
 | When | What you see |
 |---|---|
-| 🚗 You park (Sat 2:00 PM) | **Confirm Parking Location**<br>📍 Folsom St, Near 22nd St, West side · Block: 22nd St – 23rd St<br>✅ Confirm · ✏️ Pick another · 🚫 Not now |
+| 🚗 You park (Sat 2:00 PM) | **Confirm Parking Location**<br>📍 Folsom St, Near 22nd St, West side<br>✅ Confirm · ✏️ Pick another · 🚫 Not now |
 | 🌙 Night before (Sun 9:00 PM) | **Car Move Reminder**<br>Located at Folsom St, Near 22nd St, West side<br>Street sweeping Mon, Oct 26, 9:00 AM–11:00 AM. |
 | ⏰ 30 min before (Mon 8:30 AM) | Alarm: *Move car – street sweeping* |
 
@@ -40,6 +40,7 @@ sequenceDiagram
 - **Which block:** one Socrata query using `distance_in_meters()` returns the nearest block sides, already sorted.
 - **Which side:** a cross product of your position against the block's centreline gives left/right, which maps to the dataset's `cnnrightleft`. The `blockside` field gives the compass label (North, West, …).
 - **Which cross street:** where your position falls along the block (`limits` is listed in the line's drawn direction) gives the nearer end.
+- **The pick-another list:** up to 10 distinct *street, cross street, side* options. Nearby blocks come first, then each block's far end, in case GPS is off along the block.
 - **When:** `weekN` means the Nth occurrence of that weekday in the month. The script searches the next 36 days for the first window that hasn't ended.
 - **Cancelling:** parking again, or reconnecting to the car, clears the saved spot, the pending reminder and the alarms. Outside SF the API returns nothing, so nothing is set.
 
@@ -130,7 +131,7 @@ npm test               # all tests (offline schedule maths, loader fallback, liv
 npm run test:offline   # skip the tests that call data.sf.gov
 
 npm run try -- park lat=37.7549 lon=-122.41448     # print what Shortcuts would get
-npm run try -- confirm "choice=Folsom St, Near 22nd St, West side (toward 23rd St)"
+npm run try -- confirm "choice=Folsom St, Near 22nd St, West side"
 npm run try -- nightly now=2026-10-25T21:00:00-07:00
 npm run try                                        # status
 ```

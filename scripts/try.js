@@ -1,6 +1,6 @@
 // Run sweep.js from the terminal against the live SF API and print what Shortcuts would get.
 //   npm run try -- park lat=37.7549 lon=-122.41448
-//   npm run try -- confirm "choice=Folsom St, Near 22nd St, West side (toward 23rd St)"
+//   npm run try -- confirm "choice=Folsom St, Near 22nd St, West side"
 //   npm run try -- nightly now=2026-10-25T21:00:00-07:00
 //   npm run try                      (status)
 // Saved state lives in .sweep-state/ so park -> confirm -> nightly works across runs.
