@@ -20,7 +20,7 @@ async function runLoader({ body = "", status = 200, offline = false }) {
     }
   };
   globalThis.importModule = p => { delete require.cache[require.resolve(p)]; return require(p); };
-  globalThis.args = { shortcutParameter: { mode: "nightly" } };
+  globalThis.args = { shortcutParameter: { mode: "clear" } };
   globalThis.Script = { setShortcutOutput: o => { output = o; }, complete() {} };
   console.warn = () => {};
   try {
@@ -39,18 +39,18 @@ test("offline with no cache reports an error", async () => {
 });
 
 test("a good download runs and passes the Shortcuts parameter through", async () => {
-  assert.deepEqual(await runLoader({ body: lib(1) }), { version: 1, mode: "nightly" });
+  assert.deepEqual(await runLoader({ body: lib(1) }), { version: 1, mode: "clear" });
 });
 
 test("a broken push falls back to the last good copy", async () => {
-  assert.deepEqual(await runLoader({ body: "module.exports = {" }), { version: 1, mode: "nightly" });
+  assert.deepEqual(await runLoader({ body: "module.exports = {" }), { version: 1, mode: "clear" });
 });
 
 test("an HTTP error falls back to the last good copy", async () => {
-  assert.deepEqual(await runLoader({ body: "404: Not Found", status: 404 }), { version: 1, mode: "nightly" });
+  assert.deepEqual(await runLoader({ body: "404: Not Found", status: 404 }), { version: 1, mode: "clear" });
 });
 
 test("a new good version replaces the cache", async () => {
-  assert.deepEqual(await runLoader({ body: lib(2) }), { version: 2, mode: "nightly" });
-  assert.deepEqual(await runLoader({ offline: true }), { version: 2, mode: "nightly" });
+  assert.deepEqual(await runLoader({ body: lib(2) }), { version: 2, mode: "clear" });
+  assert.deepEqual(await runLoader({ offline: true }), { version: 2, mode: "clear" });
 });

@@ -1,14 +1,13 @@
 # 🧹 sf-street-sweeper
 
-**Never get a San Francisco street-sweeping ticket again.** When you park, your iPhone works out which block and which side of the street you're on, looks up that side's sweeping schedule, and reminds you to move the car at 9 PM the night before. It also sets an alarm for 30 minutes before sweeping starts.
+**Never get a San Francisco street-sweeping ticket again.** When you park, your iPhone works out which block and which side of the street you're on, looks up that side's sweeping schedule, and reminds you to move the car at 9 PM the night before each sweep.
 
 | When | What you see |
 |---|---|
 | 🚗 You park (Sat 2:00 PM) | **Confirm Parking Location**<br>📍 Folsom St, Near 22nd St, West side<br>✅ Confirm · ✏️ Pick another · 🚫 Not now |
 | 🌙 Night before (Sun 9:00 PM) | **Car Move Reminder**<br>Located at Folsom St, Near 22nd St, West side<br>Street sweeping Mon, Oct 26, 9:00 AM–11:00 AM. |
-| ⏰ 30 min before (Mon 8:30 AM) | Alarm: *Move car – street sweeping* |
 
-Built with **Apple Shortcuts** for the triggers, menus and alarms, **[Scriptable](https://scriptable.app)** for the logic, and SF's **[Street Sweeping Schedule](https://data.sf.gov/d/yhqp-riqs)** open data.
+Built with **Apple Shortcuts** for the triggers and menus, **[Scriptable](https://scriptable.app)** for the logic, and SF's **[Street Sweeping Schedule](https://data.sf.gov/d/yhqp-riqs)** open data.
 
 ---
 
@@ -30,19 +29,16 @@ sequenceDiagram
     SC->>SC: Confirm / Pick another
     SC->>L: {mode: confirm, choice}
     L->>SF: schedule for that block side
-    L->>L: schedule 9 PM reminder
-    Note over SC,L: every night at 9 PM
-    SC->>L: {mode: nightly}
-    L-->>SC: alarm time (if sweeping is within 24 h)
-    SC->>SC: Create Alarm
+    L->>L: schedule a 9 PM reminder before each sweep (next 5 weeks)
+    Note over L: iOS delivers each reminder on time, no shortcut needed
 ```
 
 - **Which block:** one Socrata query using `distance_in_meters()` returns the nearest block sides, already sorted.
 - **Which side:** a cross product of your position against the block's centreline gives left/right, which maps to the dataset's `cnnrightleft`. The `blockside` field gives the compass label (North, West, …).
 - **Which cross street:** where your position falls along the block (`limits` is listed in the line's drawn direction) gives the nearer end.
 - **The pick-another list:** up to 10 distinct *street, cross street, side* options. Nearby blocks come first, then each block's far end, in case GPS is off along the block.
-- **When:** `weekN` means the Nth occurrence of that weekday in the month. The script searches the next 36 days for the first window that hasn't ended.
-- **Cancelling:** parking again, or reconnecting to the car, clears the saved spot, the pending reminder and the alarms. Outside SF the API returns nothing, so nothing is set.
+- **When:** `weekN` means the Nth occurrence of that weekday in the month. On confirm, the script finds every sweep in the next 36 days and schedules a 9 PM reminder the night before each one (up to 20). That's far beyond SF's 72-hour parking limit, so nothing needs to run nightly. If you park after 9 PM the night before, that reminder is sent immediately.
+- **Cancelling:** parking again, or reconnecting to the car, cancels every pending reminder and forgets the spot. Outside SF the API returns nothing, so nothing is set.
 
 > **About GPS accuracy:** phone GPS is usually off by 5–15 m, about half a street's width. The street and cross street are reliable; the side is a best guess. That's why you're asked to confirm.
 
@@ -67,7 +63,6 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
 <summary><b>Sweep · Clear</b></summary>
 
 1. **Run Script** · Parameter: **Dictionary** `mode = clear`
-2. **Get All Alarms** → **Repeat with Each** → **If** *Repeat Item › Label* contains `Move car` → **Toggle Alarm** *Repeat Item* **Off**
 </details>
 
 <details open>
@@ -82,14 +77,6 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
    - **✏️ Pick another**: **Choose from List** *Script Result › labels* → **Set Variable** `Choice`
    - **🚫 Not now**: **Stop This Shortcut**
 6. **Run Script** · Parameter: **Dictionary** `mode = confirm`, `choice = Choice`
-7. **If** *Script Result › alarm* has any value → **Get Dates from Input** → **Create Alarm** at that time, label `Move car – street sweeping`
-</details>
-
-<details open>
-<summary><b>Sweep · Nightly</b></summary>
-
-1. **Run Script** · Parameter: **Dictionary** `mode = nightly`
-2. The same **If → Get Dates from Input → Create Alarm** as step 7 above
 </details>
 
 ### 4. Add the automations (on the iPhone)
@@ -99,7 +86,6 @@ Shortcuts › Automation › **+**. Choose **Run Immediately** for each and turn
 |---|---|
 | CarPlay **Disconnects** (or Bluetooth › *your car* › Disconnects) | `Confirm Parking Location` |
 | CarPlay **Connects** | `Sweep · Clear` |
-| Time of Day **9:00 PM**, Daily | `Sweep · Nightly` |
 
 Allow Shortcuts location access as **Always**.
 
@@ -112,15 +98,14 @@ Allow Shortcuts location access as **Always**.
 | `mode` | Input | Returns |
 |---|---|---|
 | `park` | `lat`, `lon` | `{best, prompt, labels}`, or `{labels: []}` outside SF |
-| `confirm` | `choice` (one of `labels`) | `{alarm?: "yyyy-MM-dd HH:mm"}` |
-| `nightly` | — | `{alarm?}`: only when the alarm is due within 24 h, and only once per sweep |
-| `clear` | — | `{}` |
+| `confirm` | `choice` (one of `labels`) | `{spot, next, reminders}`: the next sweep and how many reminders were scheduled |
+| `clear` | — | `{}` (cancels all reminders, forgets the spot) |
 
-Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `NOTIFY_HOUR`, `ALARM_LEAD_MIN`) are at the top of the file.
+Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `MAX_OPTIONS`, `NOTIFY_HOUR`, `LOOKAHEAD_DAYS`, `MAX_REMINDERS`) are at the top of the file.
 
-The parameter can also be JSON text or a bare mode name (`nightly`), and keys are matched case-insensitively. Input with no recognisable `mode` gives an error that shows what the script received.
+The parameter can also be JSON text or a bare mode name (`clear`), and keys are matched case-insensitively. Input with no recognisable `mode` gives an error that shows what the script received.
 
-**No input** (tapping ▶︎ in Scriptable) opens a read-only status screen: the version, your saved spot and next sweep, whether a reminder is pending, and a live check of the SF API.
+**No input** (tapping ▶︎ in Scriptable) opens a read-only status screen: the version, your saved spot and next sweep, how many reminders are scheduled, and a live check of the SF API.
 
 ---
 
@@ -132,11 +117,11 @@ npm run test:offline   # skip the tests that call data.sf.gov
 
 npm run try -- park lat=37.7549 lon=-122.41448     # print what Shortcuts would get
 npm run try -- confirm "choice=Folsom St, Near 22nd St, West side"
-npm run try -- nightly now=2026-10-25T21:00:00-07:00
 npm run try                                        # status
+npm run try -- clear
 ```
 
-`npm run try` runs the real script against the live API and remembers the saved spot in `.sweep-state/`, so park → confirm → nightly works across runs. Notifications are printed instead of sent. On the phone, add **Quick Look** (*Script Result*) after any Run Script action to see the same output.
+`npm run try` runs the real script against the live API and remembers the saved spot in `.sweep-state/`, so park → confirm → status works across runs. Notifications are printed instead of sent. On the phone, add **Quick Look** (*Script Result*) after any Run Script action to see the same output.
 
 Node 18+ is required; there are no dependencies. The tests run the real script against small stand-ins for Scriptable's `Request`, `Notification` and `FileManager` ([`test/scriptable-mock.js`](test/scriptable-mock.js)). They use `America/Los_Angeles` time so DST is covered.
 
@@ -165,7 +150,8 @@ req.headers = { Authorization: `token ${Keychain.get("github-token")}` };
 ## Known limitations
 
 - **Holidays aren't checked.** You may get a reminder on a holiday when sweeping is suspended, which errs on the safe side.
-- **Disabled alarms pile up.** Shortcuts can only switch alarms off, not delete them, so used ones collect in the Clock app.
+- **Reminders are notifications, not alarms.** They follow silent mode and Focus.
+- **Reminders cover 5 weeks.** A car left in one spot longer than that gets no further reminders, though SF's 72-hour limit applies long before then.
 - **Data quirks.** A few SF records have truncated street names (`ission Bay Cir`) or leading zeros (`04th St`).
 - **Maps' Parked Car pin isn't used.** Shortcuts can't read it. The automation uses the same CarPlay/Bluetooth disconnect signal Maps relies on, plus your current location.
 
