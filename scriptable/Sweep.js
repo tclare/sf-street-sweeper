@@ -2,7 +2,7 @@
 // Downloads src/sweep.js from GitHub, falls back to the last good copy when offline
 // or when the new version fails to load, then runs it with the Shortcuts parameter.
 
-const REPO = "YOUR_GITHUB_USER/street-sweeper";
+const REPO = "tclare/sf-street-sweeper";
 const REF = "main"; // branch, tag or commit SHA
 const URL = `https://raw.githubusercontent.com/${REPO}/${REF}/src/sweep.js`;
 

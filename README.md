@@ -1,4 +1,4 @@
-# 🧹 street-sweeper
+# 🧹 sf-street-sweeper
 
 **Never get a San Francisco street-sweeping ticket again.** When you park, your iPhone works out which block and which side of the street you're on, looks up that side's sweeping schedule, and reminds you to move the car at 9 PM the night before. It also sets an alarm for 30 minutes before sweeping starts.
 
@@ -55,7 +55,7 @@ Push it to GitHub. The phone fetches `src/sweep.js` anonymously, so the repo nee
 ### 2. Install the loader in Scriptable
 1. Install [Scriptable](https://apps.apple.com/app/scriptable/id1405459188) on your iPhone.
 2. Create a script named **`Sweep`** and paste in [`scriptable/Sweep.js`](scriptable/Sweep.js).
-3. Set `REPO` at the top to `your-github-user/street-sweeper`.
+3. `REPO` at the top is set to `tclare/sf-street-sweeper`. Change it if you fork this repo.
 
 That's the only code that lives on the phone. Everything else comes from `main`.
 
