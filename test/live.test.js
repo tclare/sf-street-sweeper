@@ -41,6 +41,15 @@ test("confirm schedules a 9pm reminder the night before every sweep", opts, asyn
   assert.equal(delivered.at(-1).title, "Parking Confirmed");
 });
 
+test("status mode reports the tracked spot as text", opts, async () => {
+  const { text } = await run({ mode: "status", now: SAT });
+  assert.equal(text, [
+    `Parked: ${WEST}`,
+    "Next sweeping: Mon, Oct 26, 9:00 AM–11:00 AM",
+    "Reminders: 15 scheduled",
+  ].join("\n"));
+});
+
 test("parking after 9pm the night before reminds now, then schedules the rest", opts, async () => {
   await run({ mode: "park", ...FOLSOM, now: "2026-10-25T22:30:00-07:00" });
   assert.equal(pending.size, 0); // park cancels the previous spot's reminders
@@ -63,6 +72,13 @@ test("outside SF returns no candidates and leaves nothing scheduled", opts, asyn
   const out = await run({ mode: "park", lat: 37.8044, lon: -122.2711 }); // Oakland
   assert.deepEqual(out, { labels: [] });
   assert.equal(pending.size, 0);
+  assert.deepEqual(await run({ mode: "status" }), { text: "" });
+});
+
+test("status mode is blank while a spot awaits confirmation", opts, async () => {
+  await run({ mode: "park", ...FOLSOM, now: SAT });
+  assert.deepEqual(await run({ mode: "status" }), { text: "" });
+  await run({ mode: "clear" });
 });
 
 test("no input shows read-only status with the version", opts, async () => {

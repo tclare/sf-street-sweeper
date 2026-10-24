@@ -4,10 +4,11 @@
 //   {mode: "park", lat, lon}  -> {best, prompt, labels}   (no "best" = outside SF / no sweeping nearby)
 //   {mode: "confirm", choice} -> {spot, next, reminders}  (schedules a 9pm reminder before each sweep)
 //   {mode: "clear"}           -> {}                       (cancels reminders, forgets the spot)
+//   {mode: "status"}          -> {text}                   ("" when nothing is being tracked)
 // No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
-const VERSION = "2.0.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
+const VERSION = "2.1.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
 const MAX_OPTIONS = 10; // distinct spots offered in the pick-another list
@@ -30,10 +31,14 @@ async function run(raw) {
     case "park": return park(Number(input.lat), Number(input.lon));
     case "confirm": return confirm(input.choice);
     case "clear": await clear(); return {};
+    case "status": {
+      const { lines, active } = await tracking();
+      return { text: active ? lines.join("\n") : "" };
+    }
     default:
       throw new Error(
         `Unknown mode: ${input.mode}. Received ${describe(raw)}. ` +
-        "Run this from Shortcuts with a Dictionary (mode = park, confirm or clear) " +
+        "Run this from Shortcuts with a Dictionary (mode = park, confirm, clear or status) " +
         "in Run Script's Parameter field."
       );
   }
@@ -110,22 +115,7 @@ async function clear() {
 
 // Read-only: what's saved, what's scheduled, and whether the SF API answers.
 async function status() {
-  const state = loadState();
-  const lines = [];
-  if (state?.rules) {
-    const [next] = upcomingSweeps(state.rules, now);
-    lines.push(`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`);
-  } else {
-    lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot");
-  }
-
-  const reminders = (await Notification.allPending())
-    .filter(n => n.identifier?.startsWith(REMINDER_PREFIX))
-    .map(n => n.nextTriggerDate)
-    .sort((p, q) => (p ?? 0) - (q ?? 0));
-  const first = reminders[0] ? `, next ${fmtDateTime(reminders[0])}` : "";
-  lines.push(`Reminders: ${reminders.length ? `${reminders.length} scheduled${first}` : "none"}`);
-
+  const { lines } = await tracking();
   try {
     const [best] = await candidates(37.7549, -122.41448); // Folsom St test point
     lines.push(`SF API: OK (test spot: ${best?.label ?? "no result"})`);
@@ -141,6 +131,26 @@ async function status() {
     await alert.present();
   }
   return { version: VERSION, status: lines };
+}
+
+// The saved spot and its pending reminders. Active = a confirmed spot with reminders to come.
+async function tracking() {
+  const state = loadState();
+  const lines = [];
+  if (state?.rules) {
+    const [next] = upcomingSweeps(state.rules, now);
+    lines.push(`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`);
+  } else {
+    lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot");
+  }
+
+  const reminders = (await Notification.allPending())
+    .filter(n => n.identifier?.startsWith(REMINDER_PREFIX))
+    .map(n => n.nextTriggerDate)
+    .sort((p, q) => (p ?? 0) - (q ?? 0));
+  const first = reminders[0] ? `, next ${fmtDateTime(reminders[0])}` : "";
+  lines.push(`Reminders: ${reminders.length ? `${reminders.length} scheduled${first}` : "none"}`);
+  return { lines, active: Boolean(state?.rules) && reminders.length > 0 };
 }
 
 // ---- location -> candidate spots ----

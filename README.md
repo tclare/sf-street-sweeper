@@ -79,6 +79,16 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
 6. **Run Script** · Parameter: **Dictionary** `mode = confirm`, `choice = Choice`
 </details>
 
+<details open>
+<summary><b>Sweep · Status</b> (optional: what's being tracked, for Siri, widgets or other shortcuts)</summary>
+
+1. **Run Script** · Parameter: **Dictionary** `mode = status`
+2. **Get Dictionary Value** `text` in *Script Result*
+3. **Stop and Output** *Dictionary Value*
+
+The output is empty when no confirmed spot has reminders scheduled. To see it when you tap the shortcut, put **If** *Dictionary Value* has any value → **Show Result** before step 3.
+</details>
+
 ### 4. Add the automations (on the iPhone)
 Shortcuts › Automation › **+**. Choose **Run Immediately** for each and turn off *Notify When Run*.
 
@@ -100,6 +110,7 @@ Allow Shortcuts location access as **Always**.
 | `park` | `lat`, `lon` | `{best, prompt, labels}`, or `{labels: []}` outside SF |
 | `confirm` | `choice` (one of `labels`) | `{spot, next, reminders}`: the next sweep and how many reminders were scheduled |
 | `clear` | — | `{}` (cancels all reminders, forgets the spot) |
+| `status` | — | `{text}`: spot, next sweep and reminder count on separate lines, or `""` when nothing is tracked |
 
 Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `MAX_OPTIONS`, `NOTIFY_HOUR`, `LOOKAHEAD_DAYS`, `MAX_REMINDERS`) are at the top of the file.
 
