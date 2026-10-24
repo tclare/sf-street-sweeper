@@ -4,11 +4,11 @@
 //   {mode: "park", lat, lon}  -> {best, prompt, labels}   (no "best" = outside SF / no sweeping nearby)
 //   {mode: "confirm", choice} -> {spot, next, reminder}   (schedules a 9pm reminder before the next sweep)
 //   {mode: "clear"}           -> {}                       (cancels the reminder, forgets the spot)
-//   {mode: "status"}          -> {text}                   ("" when nothing is being tracked)
+//   {mode: "status"}          -> {text}                   (N/A lines when nothing is being tracked)
 // No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
-const VERSION = "2.2.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
+const VERSION = "2.3.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
 const MAX_OPTIONS = 10; // distinct spots offered in the pick-another list
@@ -30,10 +30,7 @@ async function run(raw) {
     case "park": return park(Number(input.lat), Number(input.lon));
     case "confirm": return confirm(input.choice);
     case "clear": await clear(); return {};
-    case "status": {
-      const { lines, active } = await tracking();
-      return { text: active ? lines.join("\n") : "" };
-    }
+    case "status": return { text: (await tracking()).join("\n") };
     default:
       throw new Error(
         `Unknown mode: ${input.mode}. Received ${describe(raw)}. ` +
@@ -113,7 +110,7 @@ async function clear() {
 
 // Read-only: what's saved, what's scheduled, and whether the SF API answers.
 async function status() {
-  const { lines } = await tracking();
+  const lines = await tracking();
   try {
     const [best] = await candidates(37.7549, -122.41448); // Folsom St test point
     lines.push(`SF API: OK (test spot: ${best?.label ?? "no result"})`);
@@ -131,23 +128,21 @@ async function status() {
   return { version: VERSION, status: lines };
 }
 
-// The saved spot and its reminder. Active = a confirmed spot with a sweep still to come.
+// The saved spot, its next sweep and its reminder, as "Label: value" lines.
 async function tracking() {
   const state = loadState();
-  const lines = [];
   if (!state?.rules) {
-    lines.push(state?.pending ? "Parked: waiting for you to confirm a spot" : "Parked: no saved spot", "Reminder: none");
-    return { lines, active: false };
+    return [`Parked: ${state?.pending ? "waiting for you to confirm a spot" : "N/A"}`, "Next sweeping: N/A", "Reminder: N/A"];
   }
   const [next] = upcomingSweeps(state.rules, now);
-  lines.push(`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`);
+  const lines = [`Parked: ${state.label}`, `Next sweeping: ${next ? fmtWindow(next) : "none in the next 5 weeks"}`];
 
   const pending = (await Notification.allPending()).find(n => n.identifier === REMINDER_ID);
   let reminder = "none"; // e.g. the car stayed put past the sweep it was reminded about
   if (pending) reminder = fmtDateTime(pending.nextTriggerDate ?? state.reminderAt);
   else if (next && state.reminderFor === next.start.toISOString()) reminder = "sent";
   lines.push(`Reminder: ${reminder}`);
-  return { lines, active: Boolean(next) };
+  return lines;
 }
 
 // ---- location -> candidate spots ----

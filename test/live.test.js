@@ -76,12 +76,12 @@ test("outside SF returns no candidates and leaves nothing scheduled", opts, asyn
   const out = await run({ mode: "park", lat: 37.8044, lon: -122.2711 }); // Oakland
   assert.deepEqual(out, { labels: [] });
   assert.equal(pending.size, 0);
-  assert.deepEqual(await run({ mode: "status" }), { text: "" });
+  assert.deepEqual(await run({ mode: "status" }), { text: "Parked: N/A\nNext sweeping: N/A\nReminder: N/A" });
 });
 
-test("status mode is blank while a spot awaits confirmation", opts, async () => {
+test("status mode says when a spot awaits confirmation", opts, async () => {
   await run({ mode: "park", ...FOLSOM, now: SAT });
-  assert.deepEqual(await run({ mode: "status" }), { text: "" });
+  assert.match((await run({ mode: "status" })).text, /^Parked: waiting for you to confirm a spot\nNext sweeping: N\/A/);
   await run({ mode: "clear" });
 });
 
@@ -89,8 +89,9 @@ test("no input shows read-only status with the version", opts, async () => {
   const out = await run({});
   assert.equal(out.version, VERSION);
   assert.deepEqual(out.status, [
-    "Parked: no saved spot",
-    "Reminder: none",
+    "Parked: N/A",
+    "Next sweeping: N/A",
+    "Reminder: N/A",
     `SF API: OK (test spot: ${WEST})`,
   ]);
 });

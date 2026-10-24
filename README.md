@@ -86,7 +86,7 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
 2. **Get Dictionary Value** `text` in *Script Result*
 3. **Stop and Output** *Dictionary Value*
 
-After CarPlay disconnects and you confirm, it shows the spot, the next sweep and the reminder time. After CarPlay connects, it's empty. To see it when you tap the shortcut, put **If** *Dictionary Value* has any value → **Show Result** before step 3.
+After CarPlay disconnects and you confirm, it shows the spot, the next sweep and the reminder time. After CarPlay connects, every line reads `N/A`. To see it when you tap the shortcut, put **Show Result** before step 3.
 </details>
 
 ### 4. Add the automations (on the iPhone)
@@ -110,7 +110,7 @@ Allow Shortcuts location access as **Always**.
 | `park` | `lat`, `lon` | `{best, prompt, labels}`, or `{labels: []}` outside SF |
 | `confirm` | `choice` (one of `labels`) | `{spot, next, reminder}`: the next sweep and when its reminder fires (`"sent now"` if 9 PM has passed) |
 | `clear` | — | `{}` (cancels the reminder, forgets the spot) |
-| `status` | — | `{text}`: spot, next sweep and reminder (a time, `sent` or `none`) on separate lines, or `""` when nothing is tracked |
+| `status` | — | `{text}`: `Parked`, `Next sweeping` and `Reminder` lines (a time, `sent` or `none`), each `N/A` when nothing is tracked |
 
 Pass `now` (an ISO date) to pretend it's another time. This works in the Shortcuts Dictionary too, which is handy for testing on the phone. Tuning constants (`SEARCH_METERS`, `MAX_OPTIONS`, `NOTIFY_HOUR`, `LOOKAHEAD_DAYS`) are at the top of the file.
 
