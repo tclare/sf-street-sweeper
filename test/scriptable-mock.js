@@ -26,6 +26,8 @@ globalThis.Request = class {
 };
 
 globalThis.Notification = class {
+  actions = [];
+  addAction(title, url) { this.actions.push({ title, url }); }
   setTriggerDate(d) { this.triggerDate = d; this.nextTriggerDate = d; }
   async schedule() {
     if (this.triggerDate) pending.set(this.identifier, this); // no trigger date = delivered now
@@ -33,6 +35,20 @@ globalThis.Notification = class {
   }
   static async allPending() { return [...pending.values()]; }
   static async removePending(ids) { ids.forEach(id => pending.delete(id)); }
+  static async removeDelivered(ids) {
+    for (let i = delivered.length - 1; i >= 0; i--) if (ids.includes(delivered[i].identifier)) delivered.splice(i, 1);
+  }
 };
 
-module.exports = { delivered, pending };
+// Alerts answer with the next index queued in alertAnswers (-1 = cancel) and are recorded in alerts.
+const alerts = [];
+const alertAnswers = [];
+globalThis.Alert = class {
+  actions = [];
+  addAction(t) { this.actions.push(t); }
+  addCancelAction(t) { this.cancel = t; }
+  async presentAlert() { alerts.push(this); return alertAnswers.shift() ?? -1; }
+  async presentSheet() { return this.presentAlert(); }
+};
+
+module.exports = { delivered, pending, alerts, alertAnswers };
