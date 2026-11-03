@@ -4,10 +4,11 @@
 
 | When | What you see |
 |---|---|
-| 🚗 You park (Sat 2:00 PM) | **Confirm Parking Location**<br>📍 Folsom St, Near 22nd St, West side<br>✅ Confirm · ✏️ Pick another · 🚫 Not now |
+| 🚗 You park (Sat 2:00 PM) | **Car Park Detected at Folsom St, Near 22nd St, West side**<br>Tap to confirm or change<br>(long-press: ✅ Confirm · ✏️ Change) |
+| 👆 You tap it | **Confirm Parking Location**<br>📍 Folsom St, Near 22nd St, West side<br>✅ Confirm · ✏️ Pick another · 🚫 Not now |
 | 🌙 Night before (Sun 9:00 PM) | **Car Move Reminder**<br>Located at Folsom St, Near 22nd St, West side<br>Street sweeping Mon, Oct 26, 9:00 AM–11:00 AM. |
 
-Built with **Apple Shortcuts** for the triggers and menus, **[Scriptable](https://scriptable.app)** for the logic, and SF's **[Street Sweeping Schedule](https://data.sf.gov/d/yhqp-riqs)** open data.
+Built with **Apple Shortcuts** for the triggers, **[Scriptable](https://scriptable.app)** for the logic, and SF's **[Street Sweeping Schedule](https://data.sf.gov/d/yhqp-riqs)** open data.
 
 ---
 
@@ -26,8 +27,8 @@ sequenceDiagram
     L->>GH: fetch src/sweep.js (cached fallback)
     L->>SF: blocks within 90 m, nearest first
     L-->>SC: best guess + other candidates
-    SC->>SC: Confirm / Pick another
-    SC->>L: {mode: confirm, choice}
+    L->>L: notify "Car Park Detected at …"
+    Note over L: tap → {mode: choose} in Scriptable: Confirm / Pick another<br>long-press → Confirm
     L->>SF: schedule for that block side
     L->>L: schedule a 9 PM reminder the night before the next sweep
     Note over L: iOS delivers it on time, no shortcut needed
@@ -38,7 +39,7 @@ sequenceDiagram
 - **Which cross street:** where your position falls along the block (`limits` is listed in the line's drawn direction) gives the nearer end.
 - **The pick-another list:** up to 10 distinct *street, cross street, side* options. Nearby blocks come first, then each block's far end, in case GPS is off along the block.
 - **When:** `weekN` means the Nth occurrence of that weekday in the month. On confirm, the script finds the next sweep (looking up to 36 days ahead) and schedules one 9 PM reminder for the night before. If you park after 9 PM the night before, it's sent immediately. You move the car for every sweep, and parking again schedules the next reminder.
-- **Cancelling:** parking again, or reconnecting to the car, cancels the pending reminder and forgets the spot. Outside SF the API returns nothing, so nothing is set.
+- **Cancelling:** parking again, or reconnecting to the car, cancels the pending reminder, removes an unanswered Car Park Detected notification, and forgets the spot. Outside SF the API returns nothing, so nothing is set.
 
 > **About GPS accuracy:** phone GPS is usually off by 5–15 m, about half a street's width. The street and cross street are reliable; the side is a best guess. That's why you're asked to confirm.
 
@@ -66,17 +67,13 @@ In each **Run Script** action, choose script *Sweep* and leave **Run In App** of
 </details>
 
 <details open>
-<summary><b>Confirm Parking Location</b> (iOS titles the menu notification with this name)</summary>
+<summary><b>Confirm Parking Location</b></summary>
 
 1. **Run Shortcut** `Sweep · Clear`
 2. **Get Current Location**
 3. **Run Script** · Parameter: **Dictionary** `mode = park`, `lat = Current Location › Latitude`, `lon = Current Location › Longitude`
-4. **If** *Script Result › best* does not have any value → **Stop This Shortcut**
-5. **Choose from Menu** · Prompt: *Script Result › prompt*
-   - **✅ Confirm**: **Text** *Script Result › best* → **Set Variable** `Choice`
-   - **✏️ Pick another**: **Choose from List** *Script Result › labels* → **Set Variable** `Choice`
-   - **🚫 Not now**: **Stop This Shortcut**
-6. **Run Script** · Parameter: **Dictionary** `mode = confirm`, `choice = Choice`
+
+On a block with sweeping, the script sends a **Car Park Detected at …** notification. Tap it to open Scriptable's Confirm / Pick another / Not now menu, or long-press it and choose **✅ Confirm**. Both open Scriptable to run *Sweep*, so the script must keep that name. Upgrading from the menu version? Delete the old **If**, **Choose from Menu** and `mode = confirm` steps.
 </details>
 
 <details open>
@@ -107,7 +104,8 @@ Allow Shortcuts location access as **Always**.
 
 | `mode` | Input | Returns |
 |---|---|---|
-| `park` | `lat`, `lon` | `{best, prompt, labels}`, or `{labels: []}` outside SF |
+| `park` | `lat`, `lon` | `{best, prompt, labels}` and a "Car Park Detected" notification, or `{labels: []}` outside SF |
+| `choose` | — | Shows the Confirm / Pick another menu in Scriptable, then confirms like `confirm`. Tapping the park notification runs it. |
 | `confirm` | `choice` (one of `labels`) | `{spot, next, reminder}`: the next sweep and when its reminder fires (`"sent now"` if 9 PM has passed) |
 | `clear` | — | `{}` (cancels the reminder, forgets the spot) |
 | `status` | — | `{text}`: `Parked`, `Next sweeping` and `Reminder` lines (a time, `sent` or `none`), each `N/A` when nothing is tracked |

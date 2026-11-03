@@ -1,20 +1,25 @@
 // Sweep: SF street-sweeping reminders for a parked car.
 // A Scriptable module: scriptable/Sweep.js downloads this file and calls run(input), where
 // input is the dictionary passed from Shortcuts' "Run Script" action:
-//   {mode: "park", lat, lon}  -> {best, prompt, labels}   (no "best" = outside SF / no sweeping nearby)
+//   {mode: "park", lat, lon}  -> {best, prompt, labels}   (and a "Car Park Detected" notification; no "best" = outside SF)
+//   {mode: "choose"}          -> {spot, next, reminder}   (tapping that notification: confirm or pick another in-app)
 //   {mode: "confirm", choice} -> {spot, next, reminder}   (schedules a 9pm reminder before the next sweep)
 //   {mode: "clear"}           -> {}                       (cancels the reminder, forgets the spot)
 //   {mode: "status"}          -> {text}                   (N/A lines when nothing is being tracked)
+// Tapping the notification passes {mode: "choose"} as its userInfo; its Confirm action runs
+// scriptable:///run/Sweep?mode=confirm&choice=... (query parameters).
 // No input (e.g. the ▶︎ button in Scriptable) shows a read-only status screen instead.
 // An optional "now" (ISO string) overrides the clock for testing.
 
-const VERSION = "2.3.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
+const VERSION = "2.4.0"; // bump when you push; ▶︎ in Scriptable shows which version ran
 const API = "https://data.sf.gov/resource/yhqp-riqs.json";
 const SEARCH_METERS = 90;
 const MAX_OPTIONS = 10; // distinct spots offered in the pick-another list
 const NOTIFY_HOUR = 21; // reminder at 9pm the night before
 const LOOKAHEAD_DAYS = 36; // how far ahead to look for the next sweep
 const REMINDER_ID = "sweep-reminder"; // v2.0-2.1 used sweep-reminder-N; clear() removes those too
+const PROMPT_ID = "sweep-park-prompt";
+const SCRIPT_NAME = "Sweep"; // the loader's name in Scriptable, which notification taps and actions run
 const DAYS = ["Sun", "Mon", "Tues", "Wed", "Thu", "Fri", "Sat"]; // dataset spelling
 
 const fm = FileManager.local();
@@ -28,25 +33,28 @@ async function run(raw) {
   if (!Object.keys(input).length) return status();
   switch (input.mode) {
     case "park": return park(Number(input.lat), Number(input.lon));
+    case "choose": return choose();
     case "confirm": return confirm(input.choice);
     case "clear": await clear(); return {};
     case "status": return { text: (await tracking()).join("\n") };
     default:
       throw new Error(
         `Unknown mode: ${input.mode}. Received ${describe(raw)}. ` +
-        "Run this from Shortcuts with a Dictionary (mode = park, confirm, clear or status) " +
+        "Run this from Shortcuts with a Dictionary (mode = park, choose, confirm, clear or status) " +
         "in Run Script's Parameter field."
       );
   }
 }
 
 // Shortcuts may pass a Dictionary, JSON text or a bare mode name, in Parameter or Texts;
-// Scriptable's own Run button passes nothing. Keys are matched case-insensitively.
+// notification taps pass userInfo, notification actions pass a URL's query parameters,
+// and Scriptable's own Run button passes nothing. Keys are matched case-insensitively.
 function normalizeInput(raw) {
   const empty = v => v == null || v === "" || (typeof v === "object" && !Object.keys(v).length);
   let v = raw;
   if (empty(v) && typeof args !== "undefined") {
-    v = [args.shortcutParameter, args.plainTexts?.[0], args.queryParameters].find(x => !empty(x));
+    v = [args.shortcutParameter, args.plainTexts?.[0], args.queryParameters, args.notification?.userInfo]
+      .find(x => !empty(x));
   }
   if (typeof v === "string") {
     try { v = JSON.parse(v); } catch { v = { mode: v }; }
@@ -76,6 +84,7 @@ async function park(lat, lon) {
   if (!cands.length) return { labels: [] };
   saveState({ pending: Object.fromEntries(cands.map(c => [c.label, c])) });
   const best = cands[0];
+  await promptToConfirm(best.label);
   return {
     best: best.label,
     prompt: `📍 ${best.label}`,
@@ -83,9 +92,33 @@ async function park(lat, lon) {
   };
 }
 
+// Run in-app by tapping the "Car Park Detected" notification.
+async function choose() {
+  const labels = Object.keys(loadState()?.pending || {});
+  if (!labels.length) throw new Error("No parked spot is waiting to be confirmed");
+  const [best] = labels;
+  const menu = new Alert();
+  menu.title = "Confirm Parking Location";
+  menu.message = `📍 ${best}`;
+  menu.addAction("✅ Confirm");
+  menu.addAction("✏️ Pick another");
+  menu.addCancelAction("🚫 Not now");
+  const picked = await menu.presentAlert();
+  if (picked === -1) return {};
+  if (picked === 0) return confirm(best);
+
+  const list = new Alert();
+  list.title = "Where did you park?";
+  labels.forEach(l => list.addAction(l));
+  list.addCancelAction("Cancel");
+  const i = await list.presentSheet();
+  return i === -1 ? {} : confirm(labels[i]);
+}
+
 async function confirm(choice) {
   const spot = (loadState()?.pending || {})[choice];
   if (!spot) throw new Error(`Unknown choice: ${choice}`);
+  await Notification.removeDelivered([PROMPT_ID]);
   const rules = await soql({
     $select: "weekday,fromhour,tohour,week1,week2,week3,week4,week5",
     $where: `cnn='${spot.cnn}' AND cnnrightleft='${spot.side}' AND weekday!='Holiday'`,
@@ -105,6 +138,8 @@ async function confirm(choice) {
 async function clear() {
   const ids = (await Notification.allPending()).map(n => n.identifier).filter(id => id?.startsWith(REMINDER_ID));
   await Notification.removePending(ids);
+  await Notification.removeDelivered([PROMPT_ID]); // a parking prompt left unanswered
+
   if (fm.fileExists(STATE_PATH)) fm.remove(STATE_PATH);
 }
 
@@ -201,6 +236,20 @@ function upcomingSweeps(rules, from, days = LOOKAHEAD_DAYS) {
 }
 
 const atHour = (day, h) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Number(h));
+
+// Delivered now. Tap: choose in-app. Long-press: Confirm without opening the menu.
+function promptToConfirm(label) {
+  const n = new Notification();
+  n.identifier = PROMPT_ID;
+  n.title = `Car Park Detected at ${label}`;
+  n.subtitle = "Tap to confirm or change";
+  n.sound = "default";
+  n.scriptName = SCRIPT_NAME;
+  n.userInfo = { mode: "choose" };
+  n.addAction("✅ Confirm", `scriptable:///run/${encodeURIComponent(SCRIPT_NAME)}?mode=confirm&choice=${encodeURIComponent(label)}`);
+  n.addAction("✏️ Change", `scriptable:///run/${encodeURIComponent(SCRIPT_NAME)}?mode=choose`);
+  return n.schedule();
+}
 
 // Returns when the reminder will fire, or null if 9pm has passed and it was sent now.
 async function scheduleReminder(label, sweep) {
